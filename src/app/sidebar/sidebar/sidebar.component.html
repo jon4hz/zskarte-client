@@ -20,11 +20,11 @@
             <div>
               @switch (mapDownloadStates[layer.key]) {
                 @case ('loading') {
-                  <button mat-flat-button color="primary" class="button-cancel" (click)="cancelDownloadMap(layer.key)" >Cancel</button>
-                  <mat-progress-bar color="primary" class="map-progress" mode="indeterminate" />
+                  <button mat-flat-button color="warn" class="button-cancel" (click)="cancelDownloadMap(layer.key)" >Cancel</button>
+                  <mat-progress-bar color="primary" class="map-progress" mode="determinate" [value]="mapProgress" />
                 }
                 @case ('downloaded') {
-                  <button mat-flat-button color="warn" color="warn" class="buttonDownload" (click)="removeLocalMap(layer.key)">
+                  <button mat-flat-button color="warn" class="button-remove" (click)="removeLocalMap(layer.key)">
                     Remove
                   </button>
                 }

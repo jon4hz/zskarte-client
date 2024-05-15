@@ -61,6 +61,10 @@ mat-slider {
   margin-bottom: 1rem;
 }
 
+.button-remove {
+  margin-bottom: 1rem;
+}
+
 .mapfile-input {
   display: none;
 }

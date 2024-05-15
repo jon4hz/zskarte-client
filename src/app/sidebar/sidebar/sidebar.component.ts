@@ -1,15 +1,15 @@
-import { Component } from '@angular/core';
+import { Component, NgZone } from '@angular/core';
 import { MatDialog } from '@angular/material/dialog';
 import { MapLegendDisplayComponent } from '../map-legend-display/map-legend-display.component';
 import { ZsMapStateService } from 'src/app/state/state.service';
 import { ZsMapStateSource, zsMapStateSourceToDownloadUrl } from 'src/app/state/interfaces';
 import { GeoadminService } from 'src/app/core/geoadmin.service';
 import { GeoFeature } from '../../core/entity/geoFeature';
-import { combineLatest, Subscription, map, Observable, share, startWith } from 'rxjs';
+import { combineLatest, Subscription, Subscriber, map, Observable, share, startWith } from 'rxjs';
 import { FormControl } from '@angular/forms';
 import { I18NService } from '../../state/i18n.service';
 import { db, LocalMapState } from '../../db/db';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpEventType, HttpResponse } from '@angular/common/http';
 
 @Component({
   selector: 'app-sidebar',
@@ -17,6 +17,9 @@ import { HttpClient } from '@angular/common/http';
   styleUrls: ['./sidebar.component.css'],
 })
 export class SidebarComponent {
+  mapProgress: number = 0;
+  fileReader: FileReader = new FileReader();
+  fileReadAborted: boolean = false;
   private subscriptions = new Map<ZsMapStateSource, Subscription>();
 
   mapSources = Object.values(ZsMapStateSource)
@@ -48,6 +51,7 @@ export class SidebarComponent {
     public i18n: I18NService,
     public dialog: MatDialog,
     private http: HttpClient,
+    private zone: NgZone,
   ) {
     const allFeatures$ = geoAdminService.getFeatures().pipe(
       share(),
@@ -132,27 +136,42 @@ export class SidebarComponent {
 
     let localMapBlob = await db.localMapBlobs.get(localMapMeta.url);
     if (!localMapBlob) {
-      const mapRequest = this.http.get(downloadUrl, { responseType: 'blob' }).subscribe({
-        next: async (localMap) => {
-          const mapStyle = await fetch('/assets/map-style.json').then((res) => res.text());
-          localMapBlob = {
-            url: localMapMeta.url,
-            data: localMap,
-          };
-          await db.localMapBlobs.add(localMapBlob);
-          localMapMeta.mapStyle = mapStyle;
-          localMapMeta.objectUrl = undefined;
-          localMapMeta.mapStatus = 'downloaded';
-          this.mapDownloadStates[map] = localMapMeta.mapStatus;
-          await db.localMapMeta.put(localMapMeta);
-        },
-        error: async (error) => {
-          localMapMeta.mapStatus = 'missing';
-          this.mapDownloadStates[map] = localMapMeta.mapStatus;
-          await db.localMapMeta.put(localMapMeta);
-          console.error('Download error:', error);
-        },
-      });
+      const mapRequest = this.http
+        .get(downloadUrl, {
+          responseType: 'blob',
+          reportProgress: true,
+          observe: 'events',
+        })
+        .subscribe({
+          next: async (event) => {
+            if (event.type === HttpEventType.DownloadProgress) {
+              const percentDone = Math.round((100 * event.loaded) / (event.total ?? 1));
+              this.zone.run(() => {
+                this.mapProgress = percentDone;
+              });
+            } else if (event instanceof HttpResponse) {
+              const localMap = event.body as Blob;
+              const mapStyle = await fetch('/assets/map-style.json').then((res) => res.text());
+              localMapBlob = {
+                url: localMapMeta.url,
+                data: localMap,
+              };
+              await db.localMapBlobs.add(localMapBlob);
+              localMapMeta.mapStyle = mapStyle;
+              localMapMeta.objectUrl = undefined;
+              localMapMeta.mapStatus = 'downloaded';
+              this.mapDownloadStates[map] = localMapMeta.mapStatus;
+              await db.localMapMeta.put(localMapMeta);
+            }
+          },
+          error: async (error) => {
+            localMapMeta.mapStatus = 'missing';
+            this.mapProgress = 0;
+            this.mapDownloadStates[map] = localMapMeta.mapStatus;
+            await db.localMapMeta.put(localMapMeta);
+            console.error('Download error:', error);
+          },
+        });
 
       // Store the subscription so it can be cancelled later
       this.subscriptions.set(map, mapRequest);
@@ -160,11 +179,11 @@ export class SidebarComponent {
   }
 
   async cancelDownloadMap(map: ZsMapStateSource) {
+    this.mapDownloadStates[map] = 'missing';
     if (this.subscriptions.has(map)) {
-      const subscription = this.subscriptions.get(map);
-      subscription?.unsubscribe();
+      this.subscriptions.get(map)?.unsubscribe();
       this.subscriptions.delete(map);
-      this.mapDownloadStates[map] = 'missing';
+      this.mapProgress = 0;
       const downloadUrl = zsMapStateSourceToDownloadUrl[map];
       const localMapMeta = await db.localMapMeta.get(downloadUrl);
       if (localMapMeta) {
@@ -176,36 +195,95 @@ export class SidebarComponent {
 
   async uploadMap(event: Event, map: ZsMapStateSource) {
     if (!event.target) return;
-    const file: File = event.target['files'][0];
-    if (!file) return;
 
+    this.mapDownloadStates[map] = 'loading';
     const downloadUrl = zsMapStateSourceToDownloadUrl[map];
-    let localMapMeta = await db.localMapMeta.get(downloadUrl);
-    if (!localMapMeta) {
-      localMapMeta = {
-        url: downloadUrl,
-        map,
-        mapStatus: this.mapDownloadStates[map],
-        objectUrl: undefined,
-        mapStyle: undefined,
-      };
-      await db.localMapMeta.put(localMapMeta);
-    }
-    try {
-      const mapStyle = await fetch('/assets/map-style.json').then((res) => res.text());
-      await db.localMapBlobs.add({
-        url: localMapMeta.url,
-        data: file,
-      });
-      localMapMeta.mapStyle = mapStyle;
-      localMapMeta.objectUrl = undefined;
-      localMapMeta.mapStatus = 'downloaded';
-    } catch (e) {
-      localMapMeta.mapStatus = 'missing';
+    const localMapMeta = (await db.localMapMeta.get(downloadUrl)) || {
+      url: downloadUrl,
+      map,
+      mapStatus: 'missing',
+      objectUrl: undefined,
+      mapStyle: undefined,
+    };
+
+    await db.localMapMeta.put(localMapMeta);
+
+    if (localMapMeta.mapStatus == 'missing') {
+      localMapMeta.mapStatus = 'loading';
     }
 
-    this.mapDownloadStates[map] = localMapMeta.mapStatus;
-    await db.localMapMeta.put(localMapMeta);
+    const file = event.target['files'][0] as Blob;
+    this.subscriptions.get(map)?.unsubscribe();
+
+    const mapRequest = this.readFile(file).subscribe({
+      next: (progress) => {
+        this.zone.run(() => {
+          this.mapProgress = progress;
+        });
+      },
+      complete: async () => {
+        if (this.fileReadAborted) {
+          this.mapProgress = 0;
+          return;
+        }
+        try {
+          const mapStyle = await fetch('/assets/map-style.json').then((res) => res.text());
+          const blob = new Blob([this.fileReader.result as ArrayBuffer]);
+          await db.localMapBlobs.add({
+            url: localMapMeta.url,
+            data: blob,
+          });
+          localMapMeta.mapStatus = 'downloaded';
+          localMapMeta.mapStyle = mapStyle;
+          localMapMeta.objectUrl = undefined;
+        } catch (e) {
+          localMapMeta.mapStatus = 'missing';
+          console.error('Error map-style download:', e);
+          this.mapProgress = 0;
+        }
+        this.mapDownloadStates[map] = localMapMeta.mapStatus;
+        await db.localMapMeta.put(localMapMeta);
+      },
+      error: async (error) => {
+        localMapMeta.mapStatus = 'missing';
+        this.mapDownloadStates[map] = localMapMeta.mapStatus;
+        await db.localMapMeta.put(localMapMeta);
+        console.error('Upload error:', error);
+      },
+    });
+    this.subscriptions.set(map, mapRequest);
+  }
+
+  readFile(file: Blob): Observable<number> {
+    return new Observable((subscriber: Subscriber<number>) => {
+      this.fileReader = new FileReader();
+      this.fileReadAborted = false;
+
+      this.fileReader.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          subscriber.next(progress);
+        }
+      };
+
+      this.fileReader.onloadend = () => {
+        subscriber.complete();
+      };
+
+      this.fileReader.onerror = () => {
+        subscriber.error('Failed to read file.');
+      };
+
+      this.fileReader.readAsArrayBuffer(file);
+
+      // Return cleanup function
+      return () => {
+        if (this.fileReader.readyState === FileReader.LOADING) {
+          this.fileReader.abort();
+          this.fileReadAborted = true;
+        }
+      };
+    });
   }
 
   async removeLocalMap(map: ZsMapStateSource): Promise<void> {
@@ -219,5 +297,6 @@ export class SidebarComponent {
       URL.revokeObjectURL(objectUrl);
     }
     this.mapDownloadStates[map] = 'missing';
+    this.mapProgress = 0;
   }
 }
