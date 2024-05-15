@@ -148,6 +148,40 @@ export class SidebarComponent {
     await db.localMapMeta.put(localMapMeta);
   }
 
+  async uploadMap(event: Event, map: ZsMapStateSource) {
+    if (!event.target) return;
+    const file: File = event.target['files'][0];
+    if (!file) return;
+
+    const downloadUrl = zsMapStateSourceToDownloadUrl[map];
+    let localMapMeta = await db.localMapMeta.get(downloadUrl);
+    if (!localMapMeta) {
+      localMapMeta = {
+        url: downloadUrl,
+        map,
+        mapStatus: this.mapDownloadStates[map],
+        objectUrl: undefined,
+        mapStyle: undefined,
+      };
+      await db.localMapMeta.put(localMapMeta);
+    }
+    try {
+      const mapStyle = await fetch('/assets/map-style.json').then((res) => res.text());
+      await db.localMapBlobs.add({
+        url: localMapMeta.url,
+        data: file,
+      });
+      localMapMeta.mapStyle = mapStyle;
+      localMapMeta.objectUrl = undefined;
+      localMapMeta.mapStatus = 'downloaded';
+    } catch (e) {
+      localMapMeta.mapStatus = 'missing';
+    }
+
+    this.mapDownloadStates[map] = localMapMeta.mapStatus;
+    await db.localMapMeta.put(localMapMeta);
+  }
+
   async removeLocalMap(map: ZsMapStateSource): Promise<void> {
     const downloadUrl = zsMapStateSourceToDownloadUrl[map];
     const blobMeta = await db.localMapMeta.get(downloadUrl);
