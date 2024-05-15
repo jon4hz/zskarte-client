@@ -44,9 +44,17 @@ mat-slider {
   width: 100%;
 }
 
+.map-progress {
+  margin-bottom: 1rem;
+}
+
 .button-download {
   margin-bottom: 1rem;
   margin-right: 1rem;
+}
+
+.button-cancel {
+  margin-bottom: 1rem;
 }
 
 .button-upload {
