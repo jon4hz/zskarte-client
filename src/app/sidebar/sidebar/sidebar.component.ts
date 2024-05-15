@@ -5,7 +5,7 @@ import { ZsMapStateService } from 'src/app/state/state.service';
 import { ZsMapStateSource, zsMapStateSourceToDownloadUrl } from 'src/app/state/interfaces';
 import { GeoadminService } from 'src/app/core/geoadmin.service';
 import { GeoFeature } from '../../core/entity/geoFeature';
-import { combineLatest, lastValueFrom, map, Observable, share, startWith } from 'rxjs';
+import { combineLatest, Subscription, map, Observable, share, startWith } from 'rxjs';
 import { FormControl } from '@angular/forms';
 import { I18NService } from '../../state/i18n.service';
 import { db, LocalMapState } from '../../db/db';
@@ -17,6 +17,8 @@ import { HttpClient } from '@angular/common/http';
   styleUrls: ['./sidebar.component.css'],
 })
 export class SidebarComponent {
+  private subscriptions = new Map<ZsMapStateSource, Subscription>();
+
   mapSources = Object.values(ZsMapStateSource)
     .map((key) => ({
       key,
@@ -114,38 +116,62 @@ export class SidebarComponent {
   async downloadMap(map: ZsMapStateSource) {
     this.mapDownloadStates[map] = 'loading';
     const downloadUrl = zsMapStateSourceToDownloadUrl[map];
-    let localMapMeta = await db.localMapMeta.get(downloadUrl);
-    if (!localMapMeta) {
-      localMapMeta = {
-        url: downloadUrl,
-        map,
-        mapStatus: this.mapDownloadStates[map],
-        objectUrl: undefined,
-        mapStyle: undefined,
-      };
-      await db.localMapMeta.put(localMapMeta);
+    const localMapMeta = (await db.localMapMeta.get(downloadUrl)) || {
+      url: downloadUrl,
+      map,
+      mapStatus: 'missing',
+      objectUrl: undefined,
+      mapStyle: undefined,
+    };
+
+    await db.localMapMeta.put(localMapMeta);
+
+    if (localMapMeta.mapStatus == 'missing') {
+      localMapMeta.mapStatus = 'loading';
     }
+
     let localMapBlob = await db.localMapBlobs.get(localMapMeta.url);
     if (!localMapBlob) {
-      try {
-        const [localMap, mapStyle] = await Promise.all([
-          lastValueFrom(this.http.get(downloadUrl, { responseType: 'blob' })),
-          fetch('/assets/map-style.json').then((res) => res.text()),
-        ]);
-        localMapBlob = {
-          url: localMapMeta.url,
-          data: localMap,
-        };
-        await db.localMapBlobs.add(localMapBlob);
-        localMapMeta.mapStyle = mapStyle;
-        localMapMeta.objectUrl = undefined;
-        localMapMeta.mapStatus = 'downloaded';
-      } catch (e) {
+      const mapRequest = this.http.get(downloadUrl, { responseType: 'blob' }).subscribe({
+        next: async (localMap) => {
+          const mapStyle = await fetch('/assets/map-style.json').then((res) => res.text());
+          localMapBlob = {
+            url: localMapMeta.url,
+            data: localMap,
+          };
+          await db.localMapBlobs.add(localMapBlob);
+          localMapMeta.mapStyle = mapStyle;
+          localMapMeta.objectUrl = undefined;
+          localMapMeta.mapStatus = 'downloaded';
+          this.mapDownloadStates[map] = localMapMeta.mapStatus;
+          await db.localMapMeta.put(localMapMeta);
+        },
+        error: async (error) => {
+          localMapMeta.mapStatus = 'missing';
+          this.mapDownloadStates[map] = localMapMeta.mapStatus;
+          await db.localMapMeta.put(localMapMeta);
+          console.error('Download error:', error);
+        },
+      });
+
+      // Store the subscription so it can be cancelled later
+      this.subscriptions.set(map, mapRequest);
+    }
+  }
+
+  async cancelDownloadMap(map: ZsMapStateSource) {
+    if (this.subscriptions.has(map)) {
+      const subscription = this.subscriptions.get(map);
+      subscription?.unsubscribe();
+      this.subscriptions.delete(map);
+      this.mapDownloadStates[map] = 'missing';
+      const downloadUrl = zsMapStateSourceToDownloadUrl[map];
+      const localMapMeta = await db.localMapMeta.get(downloadUrl);
+      if (localMapMeta) {
         localMapMeta.mapStatus = 'missing';
+        await db.localMapMeta.put(localMapMeta);
       }
     }
-    this.mapDownloadStates[map] = localMapMeta.mapStatus;
-    await db.localMapMeta.put(localMapMeta);
   }
 
   async removeLocalMap(map: ZsMapStateSource): Promise<void> {
