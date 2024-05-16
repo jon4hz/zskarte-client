@@ -1,4 +1,4 @@
-import { Component, NgZone } from '@angular/core';
+import { Component, ChangeDetectorRef } from '@angular/core';
 import { MatDialog } from '@angular/material/dialog';
 import { MapLegendDisplayComponent } from '../map-legend-display/map-legend-display.component';
 import { ZsMapStateService } from 'src/app/state/state.service';
@@ -18,8 +18,8 @@ import { HttpClient, HttpEventType, HttpResponse } from '@angular/common/http';
 })
 export class SidebarComponent {
   mapProgress: number = 0;
-  fileReader: FileReader = new FileReader();
-  fileReadAborted: boolean = false;
+  private fileReader: FileReader = new FileReader();
+  private fileReadAborted: boolean = false;
   private subscriptions = new Map<ZsMapStateSource, Subscription>();
 
   mapSources = Object.values(ZsMapStateSource)
@@ -51,7 +51,7 @@ export class SidebarComponent {
     public i18n: I18NService,
     public dialog: MatDialog,
     private http: HttpClient,
-    private zone: NgZone,
+    private cdRef: ChangeDetectorRef,
   ) {
     const allFeatures$ = geoAdminService.getFeatures().pipe(
       share(),
@@ -146,9 +146,8 @@ export class SidebarComponent {
           next: async (event) => {
             if (event.type === HttpEventType.DownloadProgress) {
               const percentDone = Math.round((100 * event.loaded) / (event.total ?? 1));
-              this.zone.run(() => {
-                this.mapProgress = percentDone;
-              });
+              this.mapProgress = percentDone;
+              this.cdRef.detectChanges();
             } else if (event instanceof HttpResponse) {
               const localMap = event.body as Blob;
               const mapStyle = await fetch('/assets/map-style.json').then((res) => res.text());
@@ -162,6 +161,7 @@ export class SidebarComponent {
               localMapMeta.mapStatus = 'downloaded';
               this.mapDownloadStates[map] = localMapMeta.mapStatus;
               await db.localMapMeta.put(localMapMeta);
+              this.cdRef.detectChanges();
             }
           },
           error: async (error) => {
@@ -216,10 +216,9 @@ export class SidebarComponent {
     this.subscriptions.get(map)?.unsubscribe();
 
     const mapRequest = this.readFile(file).subscribe({
-      next: (progress) => {
-        this.zone.run(() => {
-          this.mapProgress = progress;
-        });
+      next: (percentDone) => {
+        this.mapProgress = percentDone;
+        this.cdRef.detectChanges();
       },
       complete: async () => {
         if (this.fileReadAborted) {
@@ -243,6 +242,7 @@ export class SidebarComponent {
         }
         this.mapDownloadStates[map] = localMapMeta.mapStatus;
         await db.localMapMeta.put(localMapMeta);
+        this.cdRef.detectChanges();
       },
       error: async (error) => {
         localMapMeta.mapStatus = 'missing';
@@ -298,5 +298,6 @@ export class SidebarComponent {
     }
     this.mapDownloadStates[map] = 'missing';
     this.mapProgress = 0;
+    this.cdRef.detectChanges();
   }
 }
