@@ -45,7 +45,8 @@ mat-slider {
 }
 
 .map-progress {
-  margin-bottom: 1rem;
+  margin:  1rem;
+  margin-bottom: 2rem;
 }
 
 .button-download {
