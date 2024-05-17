@@ -130,10 +130,6 @@ export class SidebarComponent {
 
     await db.localMapMeta.put(localMapMeta);
 
-    if (localMapMeta.mapStatus == 'missing') {
-      localMapMeta.mapStatus = 'loading';
-    }
-
     let localMapBlob = await db.localMapBlobs.get(localMapMeta.url);
     if (!localMapBlob) {
       const mapRequest = this.http
@@ -164,12 +160,11 @@ export class SidebarComponent {
               this.cdRef.detectChanges();
             }
           },
-          error: async (error) => {
+          error: async () => {
             localMapMeta.mapStatus = 'missing';
             this.mapProgress = 0;
             this.mapDownloadStates[map] = localMapMeta.mapStatus;
             await db.localMapMeta.put(localMapMeta);
-            console.error('Download error:', error);
           },
         });
 
@@ -208,10 +203,6 @@ export class SidebarComponent {
 
     await db.localMapMeta.put(localMapMeta);
 
-    if (localMapMeta.mapStatus == 'missing') {
-      localMapMeta.mapStatus = 'loading';
-    }
-
     const file = event.target['files'][0] as Blob;
     this.subscriptions.get(map)?.unsubscribe();
 
@@ -237,18 +228,16 @@ export class SidebarComponent {
           localMapMeta.objectUrl = undefined;
         } catch (e) {
           localMapMeta.mapStatus = 'missing';
-          console.error('Error map-style download:', e);
           this.mapProgress = 0;
         }
         this.mapDownloadStates[map] = localMapMeta.mapStatus;
         await db.localMapMeta.put(localMapMeta);
         this.cdRef.detectChanges();
       },
-      error: async (error) => {
+      error: async () => {
         localMapMeta.mapStatus = 'missing';
         this.mapDownloadStates[map] = localMapMeta.mapStatus;
         await db.localMapMeta.put(localMapMeta);
-        console.error('Upload error:', error);
       },
     });
     this.subscriptions.set(map, mapRequest);
