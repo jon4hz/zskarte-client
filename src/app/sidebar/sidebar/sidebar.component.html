@@ -29,9 +29,9 @@
                   </button>
                 }
                 @default {
-                  <input type="file" class="mapfile-input" accept=".pmtiles" (change)="uploadMap($event, layer.key)" #mapUpload>
                   <button mat-flat-button color="primary" class="button-download" (click)="downloadMap(layer.key)">{{ i18n.get('download') }}</button>
                   <button mat-flat-button color="primary" class="button-upload" (click)="mapUpload.click()">{{ i18n.get('upload') }}</button>
+                  <input type="file" class="mapfile-input" accept=".pmtiles" (change)="uploadMap($event, layer.key)" #mapUpload>
                 }
               }
             </div>

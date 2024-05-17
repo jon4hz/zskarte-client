@@ -60,15 +60,7 @@ mat-slider {
   margin-right: 1rem;
 }
 
-.button-cancel {
-  margin-bottom: 1rem;
-}
-
-.button-upload {
-  margin-bottom: 1rem;
-}
-
-.button-remove {
+.button-cancel, .button-upload, .button-remove {
   margin-bottom: 1rem;
 }
 
