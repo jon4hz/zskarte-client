@@ -1,3 +1,21 @@
 {
-  "cSpell.words": ["dexie", "mapstate", "moveend", "zskarte"]
+  "cSpell.words": [
+    "dexie",
+    "mapstate",
+    "moveend",
+    "zskarte"
+  ],
+  "ansible.python.interpreterPath": "/bin/python",
+  "sqltools.connections": [
+    {
+      "previewLimit": 50,
+      "server": "db",
+      "port": 5432,
+      "name": "Container database",
+      "driver": "PostgreSQL",
+      "database": "zskarte",
+      "username": "zskarte",
+      "password": "supersecret123"
+    }
+  ]
 }

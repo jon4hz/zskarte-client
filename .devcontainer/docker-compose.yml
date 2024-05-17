@@ -1,0 +1,42 @@
+---
+services:
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspace:cached
+    command: sleep infinity
+
+  server:
+    image: zskarte/zskarte-server:v4.0.0
+    restart: unless-stopped
+    ports:
+      - 1337:1337
+    environment:
+      HOST: 0.0.0.0
+      PORT: 1337
+      APP_KEYS: "R6vxf972vKjp345erY3Ksk6vlKP1DDVUT51RRWTI/Qs=,svn5q45RGuTBEZ4/4CbiYdFvb9/WxzjE8XCRjVxCk2Y="
+      API_TOKEN_SALT: VGE7RcD5xMDOtHk41w3lO9j4A3EV5UGdvjDEErn8i3s=
+      ADMIN_JWT_SECRET: hLtHBsHFbXBcMKNqBOH9oQSIJIqI+gOR9L2/pqpPhGY=
+      JWT_SECRET: S/OmiRzkvSZX7HKU4PpeiyG1XqhiEcDTtcJClco1Y6E=
+      DATABASE_HOST: db
+      DATABASE_PORT: 5432
+      DATABASE_NAME: zskarte
+      DATABASE_USERNAME: zskarte
+      DATABASE_PASSWORD: supersecret123
+
+  db:
+    image: postgres:latest
+    restart: unless-stopped
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: zskarte
+      POSTGRES_DB: zskarte
+      POSTGRES_PASSWORD: supersecret123
+
+volumes:
+  postgres-data:
