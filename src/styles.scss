@@ -30,6 +30,36 @@ body {
   }
 }
 
+/********** Dark theme support ***********/
+$angular-primary: mat.$indigo-palette;
+$angular-accent: mat.$pink-palette;
+$angular-warn: mat.$red-palette;
+
+$angular-default-theme: mat.define-light-theme(
+  (
+    color: (
+      primary: $angular-primary,
+      accent: $angular-accent,
+      warn: $angular-warn,
+    ),
+  )
+);
+
+@include mat.all-component-themes($angular-default-theme);
+$angular-dark-theme: mat.define-dark-theme(
+  (
+    color: (
+      primary: $angular-primary,
+      accent: $angular-accent,
+      warn: $angular-warn,
+    ),
+  )
+);
+
+.darkMode {
+  @include mat.all-component-colors($angular-dark-theme);
+}
+
 /********** Levin's Material Style changes ***********/
 
 .mat-mdc-menu-content,
